@@ -11,8 +11,39 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <!-- Babel CDN para JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <!-- Supabase JS Client CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Supabase JS: carga principal y respaldo para navegadores/redes que bloqueen un CDN -->
+  <script>
+    window.__supabaseSdkReady = new Promise((resolve, reject) => {
+      const cdns = [
+        "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js",
+        "https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"
+      ];
+      let index = 0;
+      const loadNext = () => {
+        if (window.supabase && typeof window.supabase.createClient === "function") {
+          resolve(window.supabase);
+          return;
+        }
+        if (index >= cdns.length) {
+          reject(new Error("No se pudo cargar la biblioteca de conexión de Supabase. Comprueba tu conexión a internet o prueba desde GitHub Pages."));
+          return;
+        }
+        const script = document.createElement("script");
+        script.src = cdns[index++];
+        script.async = true;
+        script.onload = () => {
+          if (window.supabase && typeof window.supabase.createClient === "function") {
+            resolve(window.supabase);
+          } else {
+            loadNext();
+          }
+        };
+        script.onerror = loadNext;
+        document.head.appendChild(script);
+      };
+      loadNext();
+    });
+  </script>
   <!-- Lucide Icons CDN -->
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
@@ -39,15 +70,29 @@
     const SUPABASE_URL = "https://mgxzhpdmoppvqisccifk.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_liQyPDNGL8XWtMd7JGrc-g_3phZ-sF8";
 
-    // Inicializar cliente de Supabase si existen las credenciales
+    // El SDK se carga de forma asíncrona con dos CDNs de respaldo.
+    // La app espera a que esté listo antes de habilitar el inicio de sesión.
     let supabase = null;
-    if (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) {
-      try {
-        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      } catch (err) {
-        console.warn("No se pudo inicializar Supabase.", err);
-      }
-    }
+    let supabaseInitError = null;
+    const supabaseReady = window.__supabaseSdkReady
+      .then((sdk) => {
+        if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+          throw new Error("Falta la URL o la clave pública de Supabase.");
+        }
+        supabase = sdk.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true
+          }
+        });
+        return supabase;
+      })
+      .catch((err) => {
+        supabaseInitError = err;
+        console.error("Error al iniciar Supabase:", err);
+        throw err;
+      });
 
     // =========================================================================
     // LOGO VECTORIAL SVG DISTRIBUIDORA ANDREA
@@ -113,43 +158,66 @@
       const [mensajeAuth, setMensajeAuth] = useState("");
 
       useEffect(() => {
-        if (!supabase) { setAuthCargando(false); return; }
-        supabase.auth.getSession().then(({ data }) => {
-          const u = data?.session?.user || null;
+        let activo = true;
+        let suscripcion = null;
+
+        const aplicarSesion = (u) => {
           const correo = u?.email?.toLowerCase();
           if (u && !['guzman181716@gmail.com','guzman.martine@icloud.com'].includes(correo)) {
-            setUsuario(null); setRole(null); supabase.auth.signOut();
+            setUsuario(null);
+            setRole(null);
+            supabase.auth.signOut();
             setMensajeAuth('Este correo no está autorizado para esta cuenta.');
           } else {
-            setUsuario(u);
+            setUsuario(u || null);
             setRole(u ? (correo === 'guzman.martine@icloud.com' ? 'dueno' : 'cliente') : null);
           }
-          setAuthCargando(false);
-        });
-        const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-          const u = session?.user || null;
-          const correo = u?.email?.toLowerCase();
-          if (u && !['guzman181716@gmail.com','guzman.martine@icloud.com'].includes(correo)) {
-            setUsuario(null); setRole(null); supabase.auth.signOut();
-            setMensajeAuth('Este correo no está autorizado para esta cuenta.');
-          } else {
-            setUsuario(u);
-            setRole(u ? (correo === 'guzman.martine@icloud.com' ? 'dueno' : 'cliente') : null);
+        };
+
+        (async () => {
+          try {
+            await supabaseReady;
+            if (!activo) return;
+            const { data, error } = await supabase.auth.getSession();
+            if (error) throw error;
+            if (!activo) return;
+            aplicarSesion(data?.session?.user || null);
+
+            const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+              if (activo) aplicarSesion(session?.user || null);
+            });
+            suscripcion = listener?.subscription || null;
+          } catch (err) {
+            console.error("No se pudo preparar el acceso:", err);
+            if (activo) {
+              setUsuario(null);
+              setRole(null);
+              setMensajeAuth("No se pudo iniciar la conexión: " + (err?.message || "revisa tu conexión a internet."));
+            }
+          } finally {
+            if (activo) setAuthCargando(false);
           }
-          setAuthCargando(false);
-        });
-        return () => listener.subscription.unsubscribe();
+        })();
+
+        return () => {
+          activo = false;
+          if (suscripcion) suscripcion.unsubscribe();
+        };
       }, []);
 
       const entrarCuenta = async (e) => {
         e.preventDefault();
         setMensajeAuth("");
-        if (!supabase) { setMensajeAuth("No se pudo conectar con Supabase. Revisa la configuración."); return; }
+        if (!supabase) {
+          setMensajeAuth("El servicio de acceso todavía no está disponible. " + (supabaseInitError?.message || "Recarga la página con internet."));
+          return;
+        }
         const email = emailAcceso.trim().toLowerCase();
         if (!['guzman181716@gmail.com','guzman.martine@icloud.com'].includes(email)) { setMensajeAuth('Usa el correo autorizado del dueño o del cliente.'); return; }
         if (!email || !passwordAcceso) { setMensajeAuth("Escribe tu correo y contraseña."); return; }
         setAuthCargando(true);
         try {
+          await supabaseReady;
           if (modoRegistro) {
             const { data, error } = await supabase.auth.signUp({ email, password: passwordAcceso });
             if (error) throw error;
@@ -311,7 +379,7 @@
               <h1 className="text-2xl font-extrabold">DISTRIBUIDORA ANDREA</h1>
               <p className="text-sm text-slate-400 mt-2">Acceso privado al estado de cuenta y comprobantes</p>
             </div>
-            {!supabase && <p className="mb-4 text-sm text-rose-300">No se pudo conectar con el servicio de pagos.</p>}
+            {!supabase && <p className="mb-4 text-sm text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg p-3">No se pudo cargar el servicio de acceso. {supabaseInitError?.message || "Comprueba internet y recarga la página."}</p>}
             <form onSubmit={entrarCuenta} className="space-y-4">
               <div><label className="block text-sm text-slate-300 mb-1">Correo electrónico</label><input type="email" required value={emailAcceso} onChange={e=>setEmailAcceso(e.target.value)} autoComplete="email" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500" placeholder="guzman.martine@icloud.com o guzman181716@gmail.com" /></div>
               <div><label className="block text-sm text-slate-300 mb-1">Contraseña</label><input type="password" required minLength="6" value={passwordAcceso} onChange={e=>setPasswordAcceso(e.target.value)} autoComplete={modoRegistro ? "new-password" : "current-password"} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500" placeholder="Tu contraseña" /></div>
