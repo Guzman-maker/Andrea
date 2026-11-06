@@ -34,10 +34,10 @@
     // =========================================================================
     // CONFIGURACIÓN DE SUPABASE (Ingresa tus llaves de Supabase aquí)
     // =========================================================================
-    // Crea un proyecto en https://supabase.com
-    // Crea una tabla llamada "pagos" y un bucket público en Storage llamado "comprobantes"
-    const SUPABASE_URL = "";      // Ejemplo: "https://xyzcompany.supabase.co"
-    const SUPABASE_ANON_KEY = ""; // Ejemplo: "eyJhbGciOiJIUzI1NiIsInR5..."
+    // Proyecto Supabase de Distribuidora Andrea
+    // Esta es una clave PUBLICABLE (nunca colocar service_role en el navegador).
+    const SUPABASE_URL = "https://mgxzhpdmoppvqisccifk.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_liQyPDNGL8XWtMd7JGrc-g_3phZ-sF8";
 
     // Inicializar cliente de Supabase si existen las credenciales
     let supabase = null;
@@ -45,7 +45,7 @@
       try {
         supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       } catch (err) {
-        console.warn("No se pudo conectar a Supabase. Usando modo almacenamiento local.", err);
+        console.warn("No se pudo inicializar Supabase.", err);
       }
     }
 
@@ -102,9 +102,72 @@
 
     // APP PRINCIPAL
     function App() {
-      const [role, setRole] = useState('cliente');
+      const [role, setRole] = useState(null);
+      const [usuario, setUsuario] = useState(null);
+      const [authCargando, setAuthCargando] = useState(true);
+      const [modoRegistro, setModoRegistro] = useState(false);
+      const [emailAcceso, setEmailAcceso] = useState("");
+      const [passwordAcceso, setPasswordAcceso] = useState("");
       const [abonos, setAbonos] = useState([]);
       const [cargando, setCargando] = useState(true);
+      const [mensajeAuth, setMensajeAuth] = useState("");
+
+      useEffect(() => {
+        if (!supabase) { setAuthCargando(false); return; }
+        supabase.auth.getSession().then(({ data }) => {
+          const u = data?.session?.user || null;
+          const correo = u?.email?.toLowerCase();
+          if (u && !['cliente@gmail.com','dueño@gmailgmail.com'].includes(correo)) {
+            setUsuario(null); setRole(null); supabase.auth.signOut();
+            setMensajeAuth('Este correo no está autorizado para esta cuenta.');
+          } else {
+            setUsuario(u);
+            setRole(u ? (correo === 'dueño@gmailgmail.com' ? 'dueno' : 'cliente') : null);
+          }
+          setAuthCargando(false);
+        });
+        const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+          const u = session?.user || null;
+          const correo = u?.email?.toLowerCase();
+          if (u && !['cliente@gmail.com','dueño@gmailgmail.com'].includes(correo)) {
+            setUsuario(null); setRole(null); supabase.auth.signOut();
+            setMensajeAuth('Este correo no está autorizado para esta cuenta.');
+          } else {
+            setUsuario(u);
+            setRole(u ? (correo === 'dueño@gmailgmail.com' ? 'dueno' : 'cliente') : null);
+          }
+          setAuthCargando(false);
+        });
+        return () => listener.subscription.unsubscribe();
+      }, []);
+
+      const entrarCuenta = async (e) => {
+        e.preventDefault();
+        setMensajeAuth("");
+        if (!supabase) { setMensajeAuth("No se pudo conectar con Supabase. Revisa la configuración."); return; }
+        const email = emailAcceso.trim().toLowerCase();
+        if (!['cliente@gmail.com','dueño@gmailgmail.com'].includes(email)) { setMensajeAuth('Usa únicamente el correo del cliente o el correo del administrador autorizado.'); return; }
+        if (!email || !passwordAcceso) { setMensajeAuth("Escribe tu correo y contraseña."); return; }
+        setAuthCargando(true);
+        try {
+          if (modoRegistro) {
+            const { data, error } = await supabase.auth.signUp({ email, password: passwordAcceso });
+            if (error) throw error;
+            if (!data.session) setMensajeAuth("Cuenta creada. Revisa tu correo para confirmar la dirección y después inicia sesión.");
+            else setMensajeAuth("Cuenta creada correctamente.");
+          } else {
+            const { error } = await supabase.auth.signInWithPassword({ email, password: passwordAcceso });
+            if (error) throw error;
+          }
+        } catch (err) {
+          setMensajeAuth(err.message || "No se pudo completar el acceso.");
+        } finally { setAuthCargando(false); }
+      };
+
+      const cerrarSesion = async () => {
+        if (supabase) await supabase.auth.signOut();
+        setAbonos([]);
+      };
 
       // Datos base del cliente (Nota #23 Julio 2026)
       const cliente = {
@@ -129,66 +192,35 @@
       const [notificación, setNotificación] = useState(null);
       const [modalImagen, setModalImagen] = useState(null);
 
-      // Cargar abonos desde Supabase o LocalStorage al iniciar
+      // Cargar pagos privados del usuario autenticado y escuchar cambios en tiempo real.
       useEffect(() => {
+        if (!usuario || !supabase) return;
         cargarAbonos();
-
-        // Suscripción en tiempo real con Supabase
-        if (supabase) {
-          const channel = supabase
-            .channel('cambios-pagos')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'pagos' }, () => {
-              cargarAbonos();
-            })
-            .subscribe();
-
-          return () => {
-            supabase.removeChannel(channel);
-          };
-        }
-      }, []);
+        const channel = supabase.channel('pagos-andrea-' + usuario.id)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'pagos' }, () => cargarAbonos())
+          .subscribe();
+        return () => { supabase.removeChannel(channel); };
+      }, [usuario]);
 
       const cargarAbonos = async () => {
+        if (!supabase || !usuario) return;
         setCargando(true);
-        if (supabase) {
-          try {
-            const { data, error } = await supabase
-              .from('pagos')
-              .select('*')
-              .order('id', { ascending: false });
-
-            if (error) throw error;
-
-            if (data && data.length > 0) {
-              setAbonos(data);
-            } else {
-              // Si la tabla está vacía en Supabase, insertar los datos iniciales
-              await supabase.from('pagos').insert(DATOS_INICIALES_NOTA);
-              setAbonos(DATOS_INICIALES_NOTA);
+        try {
+          const { data, error } = await supabase.from('pagos').select('*').order('creado_en', { ascending: false });
+          if (error) throw error;
+          const conImagenes = await Promise.all((data || []).map(async (p) => {
+            let url = null;
+            if (p.comprobante_path) {
+              const { data: signed } = await supabase.storage.from('comprobantes').createSignedUrl(p.comprobante_path, 3600);
+              url = signed?.signedUrl || null;
             }
-          } catch (err) {
-            console.error("Error cargando de Supabase, usando LocalStorage:", err);
-            cargarDeLocalStorage();
-          }
-        } else {
-          cargarDeLocalStorage();
-        }
-        setCargando(false);
-      };
-
-      const cargarDeLocalStorage = () => {
-        const guardados = localStorage.getItem('abonos_distribuidora_andrea');
-        if (guardados) {
-          setAbonos(JSON.parse(guardados));
-        } else {
-          setAbonos(DATOS_INICIALES_NOTA);
-          localStorage.setItem('abonos_distribuidora_andrea', JSON.stringify(DATOS_INICIALES_NOTA));
-        }
-      };
-
-      const guardarEnLocalStorage = (nuevosAbonos) => {
-        setAbonos(nuevosAbonos);
-        localStorage.setItem('abonos_distribuidora_andrea', JSON.stringify(nuevosAbonos));
+            return { ...p, comprobante_url: url, dia: p.dia || (p.creado_en ? new Date(p.creado_en).toLocaleDateString('es-MX',{day:'2-digit'}) : ''), mes: p.mes || (p.creado_en ? new Date(p.creado_en).toLocaleDateString('es-MX',{month:'long'}) : '') };
+          }));
+          setAbonos(conImagenes);
+        } catch (err) {
+          console.error("Error cargando pagos:", err);
+          mostrarNotif("No se pudieron cargar los pagos. Verifica tu conexión.", "error");
+        } finally { setCargando(false); }
       };
 
       // Cálculos Financieros en Tiempo Real
@@ -211,123 +243,86 @@
         }
       };
 
-      // Registrar nuevo abono con imagen
+      // Registrar comprobante: solo el cliente autenticado puede enviar pagos pendientes.
       const handleEnviarComprobante = async (e) => {
         e.preventDefault();
-        if (!nuevoMonto || Number(nuevoMonto) <= 0) {
-          mostrarNotif("Ingresa un monto válido", "error");
-          return;
-        }
-        if (!archivoComprobante && !vistaPreviaLocal) {
-          mostrarNotif("Por favor adjunta la foto del comprobante", "error");
-          return;
-        }
-
+        if (!usuario || role !== 'cliente') return;
+        if (!nuevoMonto || Number(nuevoMonto) <= 0) { mostrarNotif("Ingresa un monto válido", "error"); return; }
+        if (Number(nuevoMonto) > Math.max(0, saldoFaltante)) { mostrarNotif("El abono no puede superar el saldo pendiente.", "error"); return; }
+        if (!archivoComprobante) { mostrarNotif("Por favor adjunta la foto del comprobante", "error"); return; }
+        if (!['image/jpeg','image/png','image/webp'].includes(archivoComprobante.type)) { mostrarNotif("Solo se permiten imágenes JPG, PNG o WEBP.", "error"); return; }
+        if (archivoComprobante.size > 10 * 1024 * 1024) { mostrarNotif("La imagen no debe superar 10 MB.", "error"); return; }
         setSubiendo(true);
-        const fechaObj = new Date();
-        const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-        const diaStr = String(fechaObj.getDate()).padStart(2, '0');
-        const mesStr = meses[fechaObj.getMonth()];
-
-        let finalComprobanteUrl = vistaPreviaLocal; // Fallback a Base64 local
-
-        // Subir a Supabase Storage si está disponible
-        if (supabase && archivoComprobante) {
-          try {
-            const nombreArchivo = `${Date.now()}_${archivoComprobante.name}`;
-            const { data: storageData, error: storageErr } = await supabase.storage
-              .from('comprobantes')
-              .upload(nombreArchivo, archivoComprobante);
-
-            if (!storageErr && storageData) {
-              const { data: publicUrlData } = supabase.storage
-                .from('comprobantes')
-                .getPublicUrl(nombreArchivo);
-              finalComprobanteUrl = publicUrlData.publicUrl;
-            }
-          } catch (err) {
-            console.warn("No se pudo subir a Supabase Storage, usando codificación local.", err);
+        try {
+          const ext = archivoComprobante.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg';
+          const ruta = `${usuario.id}/${Date.now()}_${crypto.randomUUID()}.${ext}`;
+          const { error: uploadError } = await supabase.storage.from('comprobantes').upload(ruta, archivoComprobante, { contentType: archivoComprobante.type, upsert: false });
+          if (uploadError) throw uploadError;
+          const fecha = new Date();
+          const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+          const { error } = await supabase.from('pagos').insert({
+            user_id: usuario.id, dia: String(fecha.getDate()).padStart(2,'0'), mes: meses[fecha.getMonth()],
+            monto: Number(nuevoMonto), recibio: "Por verificar", estatus: "pendiente", metodo: metodoPago,
+            comprobante_path: ruta
+          });
+          if (error) {
+            await supabase.storage.from('comprobantes').remove([ruta]);
+            throw error;
           }
-        }
-
-        const nuevoPago = {
-          id: Date.now(),
-          dia: diaStr,
-          mes: mesStr,
-          monto: Number(nuevoMonto),
-          recibio: "Por Verificar",
-          estatus: "pendiente",
-          metodo: metodoPago,
-          comprobante_url: finalComprobanteUrl
-        };
-
-        if (supabase) {
-          try {
-            const { error } = await supabase.from('pagos').insert([nuevoPago]);
-            if (error) throw error;
-            mostrarNotif("Comprobante enviado a la nube. Esperando validación del dueño.", "exito");
-          } catch (err) {
-            console.error("Error guardando en Supabase:", err);
-            const actualizados = [nuevoPago, ...abonos];
-            guardarEnLocalStorage(actualizados);
-            mostrarNotif("Guardado localmente. Se actualizará al reconectar.", "info");
-          }
-        } else {
-          const actualizados = [nuevoPago, ...abonos];
-          guardarEnLocalStorage(actualizados);
-          mostrarNotif("Comprobante enviado exitosamente (Modo Local).", "exito");
-        }
-
-        setSubiendo(false);
-        setArchivoComprobante(null);
-        setVistaPreviaLocal(null);
-        setNuevoMonto("300");
+          mostrarNotif("Comprobante enviado. Está pendiente de revisión.", "exito");
+          setArchivoComprobante(null); setVistaPreviaLocal(null); setNuevoMonto("300");
+          await cargarAbonos();
+        } catch (err) {
+          console.error(err);
+          mostrarNotif(err.message || "No se pudo enviar el comprobante.", "error");
+        } finally { setSubiendo(false); }
       };
 
-      // Acciones del Dueño: Aprobar / Rechazar
+      // La función SQL valida el correo administrador; el navegador no decide permisos.
       const handleAprobarPago = async (id) => {
-        if (supabase) {
-          try {
-            const { error } = await supabase
-              .from('pagos')
-              .update({ estatus: 'aprobado', recibio: 'Firma Digital' })
-              .eq('id', id);
-            if (error) throw error;
-            mostrarNotif("Pago APROBADO en tiempo real.", "exito");
-          } catch (err) {
-            const actualizados = abonos.map(item => item.id === id ? { ...item, estatus: 'aprobado', recibio: 'Firma Digital' } : item);
-            guardarEnLocalStorage(actualizados);
-            mostrarNotif("Pago APROBADO localmente.", "exito");
-          }
-        } else {
-          const actualizados = abonos.map(item => item.id === id ? { ...item, estatus: 'aprobado', recibio: 'Firma Digital' } : item);
-          guardarEnLocalStorage(actualizados);
-          mostrarNotif("Pago APROBADO localmente.", "exito");
-        }
+        try {
+          const { error } = await supabase.rpc('revisar_pago', { p_pago_id: id, p_estado: 'aprobado', p_nota: null });
+          if (error) throw error;
+          mostrarNotif("Pago aprobado. El saldo se actualizará.", "exito");
+          await cargarAbonos();
+        } catch (err) { mostrarNotif(err.message || "No se pudo aprobar el pago.", "error"); }
       };
 
       const handleRechazarPago = async (id) => {
-        if (supabase) {
-          try {
-            const { error } = await supabase.from('pagos').delete().eq('id', id);
-            if (error) throw error;
-            mostrarNotif("Comprobante rechazado y removido.", "info");
-          } catch (err) {
-            const actualizados = abonos.filter(item => item.id !== id);
-            guardarEnLocalStorage(actualizados);
-            mostrarNotif("Comprobante rechazado.", "info");
-          }
-        } else {
-          const actualizados = abonos.filter(item => item.id !== id);
-          guardarEnLocalStorage(actualizados);
-          mostrarNotif("Comprobante rechazado.", "info");
-        }
+        try {
+          const { error } = await supabase.rpc('revisar_pago', { p_pago_id: id, p_estado: 'rechazado', p_nota: 'Comprobante rechazado por administración' });
+          if (error) throw error;
+          mostrarNotif("Comprobante rechazado. Se conserva en el historial.", "info");
+          await cargarAbonos();
+        } catch (err) { mostrarNotif(err.message || "No se pudo rechazar el pago.", "error"); }
       };
 
       const mostrarNotif = (msg, tipo) => {
         setNotificación({ msg, tipo });
         setTimeout(() => setNotificación(null), 4000);
       };
+
+      if (authCargando) return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">Verificando acceso seguro...</div>;
+      if (!usuario) return (
+        <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-7 shadow-2xl">
+            <div className="flex flex-col items-center text-center mb-7">
+              <div className="bg-white rounded-2xl p-2 mb-4"><LogoDistribuidoraAndrea className="w-16 h-16" /></div>
+              <h1 className="text-2xl font-extrabold">DISTRIBUIDORA ANDREA</h1>
+              <p className="text-sm text-slate-400 mt-2">Acceso privado al estado de cuenta y comprobantes</p>
+            </div>
+            {!supabase && <p className="mb-4 text-sm text-rose-300">No se pudo conectar con el servicio de pagos.</p>}
+            <form onSubmit={entrarCuenta} className="space-y-4">
+              <div><label className="block text-sm text-slate-300 mb-1">Correo electrónico</label><input type="text" required value={emailAcceso} onChange={e=>setEmailAcceso(e.target.value)} autoComplete="email" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500" placeholder="tu correo" /></div>
+              <div><label className="block text-sm text-slate-300 mb-1">Contraseña</label><input type="password" required minLength="6" value={passwordAcceso} onChange={e=>setPasswordAcceso(e.target.value)} autoComplete={modoRegistro ? "new-password" : "current-password"} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500" placeholder="Tu contraseña" /></div>
+              {mensajeAuth && <p className="text-sm text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">{mensajeAuth}</p>}
+              <button disabled={!supabase || authCargando} className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl py-3">{authCargando ? "Procesando..." : (modoRegistro ? "Crear cuenta" : "Iniciar sesión")}</button>
+            </form>
+            <button onClick={()=>{setModoRegistro(!modoRegistro);setMensajeAuth("");}} className="w-full mt-4 text-sm text-blue-300 hover:text-white">{modoRegistro ? "Ya tengo cuenta · Iniciar sesión" : "Primera vez · Crear cuenta"}</button>
+            <p className="text-[11px] text-slate-500 text-center mt-6">El acceso de administrador se asigna automáticamente al correo autorizado. No compartas tu contraseña.</p>
+          </div>
+        </div>
+      );
 
       return (
         <div className="min-h-screen bg-slate-950 text-slate-100 pb-12">
@@ -369,33 +364,13 @@
                 </div>
               </div>
 
-              {/* Selector de Rol */}
-              <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 w-full sm:w-auto">
-                <button
-                  onClick={() => setRole('cliente')}
-                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                    role === 'cliente'
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  Vista Cliente
-                </button>
-                <button
-                  onClick={() => setRole('dueno')}
-                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                    role === 'dueno'
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  Vista Dueño
-                  {pendientes.length > 0 && (
-                    <span className="bg-amber-500 text-slate-950 text-xs px-2 py-0.5 rounded-full font-bold animate-pulse">
-                      {pendientes.length}
-                    </span>
-                  )}
-                </button>
+              <div className="flex items-center gap-3 w-full sm:w-auto justify-between">
+                <div className="text-right min-w-0">
+                  <p className="text-xs text-slate-400">Sesión activa</p>
+                  <p className="text-sm text-white font-semibold truncate max-w-[190px]">{usuario.email}</p>
+                  <p className="text-[10px] text-blue-300">{role === 'dueno' ? 'Administrador' : 'Cliente'}</p>
+                </div>
+                <button onClick={cerrarSesion} className="px-3 py-2 rounded-lg text-xs font-bold border border-slate-700 text-slate-300 hover:bg-slate-800">Cerrar sesión</button>
               </div>
             </div>
           </header>
@@ -420,8 +395,8 @@
                         </span>
                         <h2 className="text-2xl font-bold text-white">{cliente.nombre}</h2>
                         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400 mt-1">
-                          <span>📍 {cliente.domicilio}, {cliente.poblacion}</span>
-                          <span>📞 {cliente.telefono}</span>
+                          <span><strong className="text-slate-300">Domicilio:</strong> {cliente.domicilio}, {cliente.poblacion}</span>
+                          <span><strong className="text-slate-300">Teléfono:</strong> {cliente.telefono}</span>
                         </div>
                       </div>
                     </div>
@@ -467,7 +442,7 @@
                 {/* Formulario de Subida de Comprobante */}
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
                   <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-                    💳 Registrar Nuevo Abono con Comprobante
+                    Registrar nuevo abono
                   </h3>
                   <p className="text-xs text-slate-400 mb-6">Sube la foto del ticket o captura de pantalla de tu transferencia o pago con tarjeta.</p>
 
@@ -522,7 +497,7 @@
                             </div>
                           ) : (
                             <>
-                              <span className="text-2xl">📸</span>
+                              <span className="text-sm font-semibold text-blue-400">Adjuntar comprobante</span>
                               <span className="text-sm font-medium text-slate-200">Haz clic aquí para adjuntar tu comprobante</span>
                               <span className="text-xs text-slate-500">Formatos permitidos: JPG, PNG, WEBP</span>
                             </>
@@ -543,12 +518,12 @@
 
                 {/* Tabla de Abonos del Cliente */}
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                  <h3 className="text-lg font-bold text-white mb-4">📜 Historial de Pagos y Abonos</h3>
+                  <h3 className="text-lg font-bold text-white mb-4">Historial de pagos y abonos</h3>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs text-slate-300">
                       <thead className="bg-slate-950 text-slate-400 uppercase font-semibold border-b border-slate-800">
                         <tr>
-                          <th className="py-3 px-4">Fecha</th>
+                          <th className="py-3 px-4">Fecha y hora</th>
                           <th className="py-3 px-4">Método / Detalle</th>
                           <th className="py-3 px-4 text-right">Abono</th>
                           <th className="py-3 px-4 text-center">Estado</th>
@@ -558,18 +533,18 @@
                       <tbody className="divide-y divide-slate-800">
                         {abonos.map((item) => (
                           <tr key={item.id} className="hover:bg-slate-800/40">
-                            <td className="py-3 px-4 font-medium text-white">{item.dia} de {item.mes}</td>
+                            <td className="py-3 px-4 font-medium text-white whitespace-nowrap">{item.creado_en ? new Date(item.creado_en).toLocaleString('es-MX') : `${item.dia} de ${item.mes}`}</td>
                             <td className="py-3 px-4">{item.metodo || 'Efectivo / Mostrador'}</td>
                             <td className="py-3 px-4 text-right font-bold text-emerald-400">${Number(item.monto).toLocaleString('es-MX')}</td>
                             <td className="py-3 px-4 text-center">
                               {item.estatus === 'aprobado' ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                  ✓ Aprobado
+                                  Aprobado
                                 </span>
+                              ) : item.estatus === 'rechazado' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">Rechazado</span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                  ⏳ En Revisión
-                                </span>
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">En revisión</span>
                               )}
                             </td>
                             <td className="py-3 px-4 text-center">
@@ -684,7 +659,7 @@
                             <div>
                               <span className="text-xs text-slate-400 font-medium">Cliente: {cliente.nombre}</span>
                               <h4 className="text-xl font-bold text-emerald-400">${Number(item.monto).toLocaleString('es-MX')}</h4>
-                              <p className="text-xs text-slate-300 mt-1">Fecha: {item.dia} de {item.mes}</p>
+                              <p className="text-xs text-slate-300 mt-1">Fecha y hora: {item.creado_en ? new Date(item.creado_en).toLocaleString('es-MX') : `${item.dia} de ${item.mes}`}</p>
                               <p className="text-xs text-blue-400 font-medium">Método: {item.metodo}</p>
                             </div>
                           </div>
@@ -719,6 +694,7 @@
                         <tr>
                           <th className="py-3 px-4">Día</th>
                           <th className="py-3 px-4">Mes</th>
+                          <th className="py-3 px-4">Fecha y hora</th>
                           <th className="py-3 px-4 text-right">Abono</th>
                           <th className="py-3 px-4">Firma / Recibió</th>
                           <th className="py-3 px-4 text-center">Estado</th>
@@ -730,17 +706,18 @@
                           <tr key={item.id} className="hover:bg-slate-800/40">
                             <td className="py-3 px-4 font-bold text-white">{item.dia}</td>
                             <td className="py-3 px-4">{item.mes}</td>
+                            <td className="py-3 px-4 text-slate-400 whitespace-nowrap">{item.creado_en ? new Date(item.creado_en).toLocaleString('es-MX') : 'Registro histórico'}</td>
                             <td className="py-3 px-4 text-right font-extrabold text-emerald-400">${Number(item.monto).toLocaleString('es-MX')}</td>
                             <td className="py-3 px-4 text-slate-400">{item.recibio}</td>
                             <td className="py-3 px-4 text-center">
                               {item.estatus === 'aprobado' ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                  ✓ Aprobado
+                                  Aprobado
                                 </span>
+                              ) : item.estatus === 'rechazado' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">Rechazado</span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                  ⏳ Pendiente
-                                </span>
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">Pendiente</span>
                               )}
                             </td>
                             <td className="py-3 px-4 text-center">
