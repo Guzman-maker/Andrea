@@ -117,24 +117,24 @@
         supabase.auth.getSession().then(({ data }) => {
           const u = data?.session?.user || null;
           const correo = u?.email?.toLowerCase();
-          if (u && !['cliente@gmail.com','dueño@gmailgmail.com'].includes(correo)) {
+          if (u && !['guzman181716@gmail.com','guzman.martine@icloud.com'].includes(correo)) {
             setUsuario(null); setRole(null); supabase.auth.signOut();
             setMensajeAuth('Este correo no está autorizado para esta cuenta.');
           } else {
             setUsuario(u);
-            setRole(u ? (correo === 'dueño@gmailgmail.com' ? 'dueno' : 'cliente') : null);
+            setRole(u ? (correo === 'guzman.martine@icloud.com' ? 'dueno' : 'cliente') : null);
           }
           setAuthCargando(false);
         });
         const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
           const u = session?.user || null;
           const correo = u?.email?.toLowerCase();
-          if (u && !['cliente@gmail.com','dueño@gmailgmail.com'].includes(correo)) {
+          if (u && !['guzman181716@gmail.com','guzman.martine@icloud.com'].includes(correo)) {
             setUsuario(null); setRole(null); supabase.auth.signOut();
             setMensajeAuth('Este correo no está autorizado para esta cuenta.');
           } else {
             setUsuario(u);
-            setRole(u ? (correo === 'dueño@gmailgmail.com' ? 'dueno' : 'cliente') : null);
+            setRole(u ? (correo === 'guzman.martine@icloud.com' ? 'dueno' : 'cliente') : null);
           }
           setAuthCargando(false);
         });
@@ -146,7 +146,7 @@
         setMensajeAuth("");
         if (!supabase) { setMensajeAuth("No se pudo conectar con Supabase. Revisa la configuración."); return; }
         const email = emailAcceso.trim().toLowerCase();
-        if (!['cliente@gmail.com','dueño@gmailgmail.com'].includes(email)) { setMensajeAuth('Usa únicamente el correo del cliente o el correo del administrador autorizado.'); return; }
+        if (!['guzman181716@gmail.com','guzman.martine@icloud.com'].includes(email)) { setMensajeAuth('Usa el correo autorizado del dueño o del cliente.'); return; }
         if (!email || !passwordAcceso) { setMensajeAuth("Escribe tu correo y contraseña."); return; }
         setAuthCargando(true);
         try {
@@ -313,7 +313,7 @@
             </div>
             {!supabase && <p className="mb-4 text-sm text-rose-300">No se pudo conectar con el servicio de pagos.</p>}
             <form onSubmit={entrarCuenta} className="space-y-4">
-              <div><label className="block text-sm text-slate-300 mb-1">Correo electrónico</label><input type="text" required value={emailAcceso} onChange={e=>setEmailAcceso(e.target.value)} autoComplete="email" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500" placeholder="tu correo" /></div>
+              <div><label className="block text-sm text-slate-300 mb-1">Correo electrónico</label><input type="email" required value={emailAcceso} onChange={e=>setEmailAcceso(e.target.value)} autoComplete="email" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500" placeholder="guzman.martine@icloud.com o guzman181716@gmail.com" /></div>
               <div><label className="block text-sm text-slate-300 mb-1">Contraseña</label><input type="password" required minLength="6" value={passwordAcceso} onChange={e=>setPasswordAcceso(e.target.value)} autoComplete={modoRegistro ? "new-password" : "current-password"} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-blue-500" placeholder="Tu contraseña" /></div>
               {mensajeAuth && <p className="text-sm text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">{mensajeAuth}</p>}
               <button disabled={!supabase || authCargando} className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl py-3">{authCargando ? "Procesando..." : (modoRegistro ? "Crear cuenta" : "Iniciar sesión")}</button>
