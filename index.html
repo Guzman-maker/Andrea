@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Distribuidora Andrea - Gestor de Pagos y Créditos</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel CDN para JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Supabase JS Client CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    /* Scrollbar estilizada */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // =========================================================================
+    // CONFIGURACIÓN DE SUPABASE (Ingresa tus llaves de Supabase aquí)
+    // =========================================================================
+    // Crea un proyecto en https://supabase.com
+    // Crea una tabla llamada "pagos" y un bucket público en Storage llamado "comprobantes"
+    const SUPABASE_URL = "";      // Ejemplo: "https://xyzcompany.supabase.co"
+    const SUPABASE_ANON_KEY = ""; // Ejemplo: "eyJhbGciOiJIUzI1NiIsInR5..."
+
+    // Inicializar cliente de Supabase si existen las credenciales
+    let supabase = null;
+    if (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) {
+      try {
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      } catch (err) {
+        console.warn("No se pudo conectar a Supabase. Usando modo almacenamiento local.", err);
+      }
+    }
+
+    // =========================================================================
+    // LOGO VECTORIAL SVG DISTRIBUIDORA ANDREA
+    // =========================================================================
+    const LogoDistribuidoraAndrea = ({ className = "w-12 h-12" }) => (
+      <svg viewBox="0 0 400 400" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="200" cy="200" r="195" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="4" />
+        <text x="200" y="85" textAnchor="middle" fill="#0F172A" fontFamily="sans-serif" fontWeight="900" fontSize="24" letterSpacing="1.5">
+          DISTRIBUIDORA
+        </text>
+        <text x="200" y="115" textAnchor="middle" fill="#0F172A" fontFamily="sans-serif" fontWeight="900" fontSize="24" letterSpacing="1.5">
+          ANDREA
+        </text>
+        <circle cx="200" cy="225" r="75" stroke="#0F172A" strokeWidth="3.5" fill="none" />
+        <path d="M140 185 V 258" stroke="#0F172A" strokeWidth="3" strokeLinecap="round" />
+        <path d="M148 175 V 258" stroke="#0F172A" strokeWidth="3" strokeLinecap="round" />
+        <path d="M156 180 V 258" stroke="#0F172A" strokeWidth="3" strokeLinecap="round" />
+        <path d="M190 150 V 175 M183 175 H197 L192 190 H188 Z" stroke="#0F172A" strokeWidth="2.5" strokeLinejoin="round" fill="none" />
+        <path d="M205 150 V 165 M198 165 L212 165 L208 178 L199 178 Z" stroke="#0F172A" strokeWidth="2.5" strokeLinejoin="round" fill="none" />
+        <path d="M220 170 H255" stroke="#0F172A" strokeWidth="3" strokeLinecap="round" />
+        <rect x="230" y="152" width="12" height="18" stroke="#0F172A" strokeWidth="2.5" fill="none" />
+        <rect x="215" y="185" width="16" height="20" stroke="#0F172A" strokeWidth="2.5" fill="none" />
+        <rect x="219" y="190" width="8" height="10" stroke="#0F172A" strokeWidth="1.5" fill="none" />
+        <path d="M250 200 L242 215 H258 Z" stroke="#0F172A" strokeWidth="2.5" fill="none" />
+        <path d="M250 215 V 258" stroke="#0F172A" strokeWidth="2.5" />
+        <path d="M190 206 H202 L199 217 H193 Z" stroke="#0F172A" strokeWidth="2" fill="none" />
+        <path d="M196 206 Q 192 195 188 198 Q 194 200 196 206" stroke="#0F172A" strokeWidth="2" fill="none" />
+        <path d="M196 206 Q 200 195 204 198 Q 198 200 196 206" stroke="#0F172A" strokeWidth="2" fill="none" />
+        <rect x="175" y="228" width="60" height="26" rx="4" stroke="#0F172A" strokeWidth="3" fill="none" />
+        <rect x="180" y="233" width="22" height="16" rx="2" stroke="#0F172A" strokeWidth="2" fill="none" />
+        <rect x="207" y="233" width="22" height="16" rx="2" stroke="#0F172A" strokeWidth="2" fill="none" />
+        <path d="M125 258 H275" stroke="#0F172A" strokeWidth="3.5" strokeLinecap="round" />
+        <text x="200" y="325" textAnchor="middle" fill="#0F172A" fontFamily="serif" fontStyle="italic" fontWeight="600" fontSize="22">
+          Artículos para el hogar
+        </text>
+      </svg>
+    );
+
+    // Registros iniciales de la nota física
+    const DATOS_INICIALES_NOTA = [
+      { id: 1, dia: "20", mes: "Julio", monto: 1000, recibio: "exg", estatus: "aprobado", metodo: "Efectivo / Mostrador", comprobante_url: null },
+      { id: 2, dia: "14", mes: "Agosto", monto: 250, recibio: "Firma", estatus: "aprobado", metodo: "Efectivo / Mostrador", comprobante_url: null },
+      { id: 3, dia: "30", mes: "Agosto", monto: 300, recibio: "Firma", estatus: "aprobado", metodo: "Efectivo / Mostrador", comprobante_url: null },
+      { id: 4, dia: "08", mes: "Septiembre", monto: 300, recibio: "Firma", estatus: "aprobado", metodo: "Efectivo / Mostrador", comprobante_url: null },
+      { id: 5, dia: "13", mes: "Septiembre", monto: 300, recibio: "Firma", estatus: "aprobado", metodo: "Efectivo / Mostrador", comprobante_url: null },
+      { id: 6, dia: "22", mes: "Septiembre", monto: 300, recibio: "Firma", estatus: "aprobado", metodo: "Efectivo / Mostrador", comprobante_url: null },
+      { id: 7, dia: "22", mes: "Septiembre", monto: 300, recibio: "Firma", estatus: "aprobado", metodo: "Efectivo / Mostrador", comprobante_url: null },
+      { id: 8, dia: "29", mes: "Septiembre", monto: 300, recibio: "Firma", estatus: "aprobado", metodo: "Efectivo / Mostrador", comprobante_url: null },
+      { id: 9, dia: "12", mes: "Octubre", monto: 600, recibio: "Firma", estatus: "aprobado", metodo: "Efectivo / Mostrador", comprobante_url: null },
+      { id: 10, dia: "28", mes: "Octubre", monto: 300, recibio: "Firma", estatus: "aprobado", metodo: "Efectivo / Mostrador", comprobante_url: null },
+    ];
+
+    // APP PRINCIPAL
+    function App() {
+      const [role, setRole] = useState('cliente');
+      const [abonos, setAbonos] = useState([]);
+      const [cargando, setCargando] = useState(true);
+
+      // Datos base del cliente (Nota #23 Julio 2026)
+      const cliente = {
+        nombre: "Anette Mederos Espinoza",
+        domicilio: "C. Pino Suárez",
+        poblacion: "Comunal Morelos",
+        telefono: "753 112 41 64",
+        articulo: "Televisión 43\"",
+        formaPago: "300 c/8",
+        montoTotal: 10900.00,
+        fechaVenta: "23 Julio 2026"
+      };
+
+      // Formulario cliente
+      const [nuevoMonto, setNuevoMonto] = useState("300");
+      const [metodoPago, setMetodoPago] = useState("Tarjeta de Débito/Crédito");
+      const [archivoComprobante, setArchivoComprobante] = useState(null);
+      const [vistaPreviaLocal, setVistaPreviaLocal] = useState(null);
+      const [subiendo, setSubiendo] = useState(false);
+
+      // UI States
+      const [notificación, setNotificación] = useState(null);
+      const [modalImagen, setModalImagen] = useState(null);
+
+      // Cargar abonos desde Supabase o LocalStorage al iniciar
+      useEffect(() => {
+        cargarAbonos();
+
+        // Suscripción en tiempo real con Supabase
+        if (supabase) {
+          const channel = supabase
+            .channel('cambios-pagos')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'pagos' }, () => {
+              cargarAbonos();
+            })
+            .subscribe();
+
+          return () => {
+            supabase.removeChannel(channel);
+          };
+        }
+      }, []);
+
+      const cargarAbonos = async () => {
+        setCargando(true);
+        if (supabase) {
+          try {
+            const { data, error } = await supabase
+              .from('pagos')
+              .select('*')
+              .order('id', { ascending: false });
+
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+              setAbonos(data);
+            } else {
+              // Si la tabla está vacía en Supabase, insertar los datos iniciales
+              await supabase.from('pagos').insert(DATOS_INICIALES_NOTA);
+              setAbonos(DATOS_INICIALES_NOTA);
+            }
+          } catch (err) {
+            console.error("Error cargando de Supabase, usando LocalStorage:", err);
+            cargarDeLocalStorage();
+          }
+        } else {
+          cargarDeLocalStorage();
+        }
+        setCargando(false);
+      };
+
+      const cargarDeLocalStorage = () => {
+        const guardados = localStorage.getItem('abonos_distribuidora_andrea');
+        if (guardados) {
+          setAbonos(JSON.parse(guardados));
+        } else {
+          setAbonos(DATOS_INICIALES_NOTA);
+          localStorage.setItem('abonos_distribuidora_andrea', JSON.stringify(DATOS_INICIALES_NOTA));
+        }
+      };
+
+      const guardarEnLocalStorage = (nuevosAbonos) => {
+        setAbonos(nuevosAbonos);
+        localStorage.setItem('abonos_distribuidora_andrea', JSON.stringify(nuevosAbonos));
+      };
+
+      // Cálculos Financieros en Tiempo Real
+      const totalAbonado = abonos
+        .filter(a => a.estatus === "aprobado")
+        .reduce((sum, item) => sum + Number(item.monto), 0);
+
+      const saldoFaltante = cliente.montoTotal - totalAbonado;
+      const porcentajePagado = Math.min(100, Math.round((totalAbonado / cliente.montoTotal) * 100));
+      const pendientes = abonos.filter(a => a.estatus === "pendiente");
+
+      // Handler para seleccionar imagen local
+      const handleSeleccionarArchivo = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          setArchivoComprobante(file);
+          const reader = new FileReader();
+          reader.onloadend = () => setVistaPreviaLocal(reader.result);
+          reader.readAsDataURL(file);
+        }
+      };
+
+      // Registrar nuevo abono con imagen
+      const handleEnviarComprobante = async (e) => {
+        e.preventDefault();
+        if (!nuevoMonto || Number(nuevoMonto) <= 0) {
+          mostrarNotif("Ingresa un monto válido", "error");
+          return;
+        }
+        if (!archivoComprobante && !vistaPreviaLocal) {
+          mostrarNotif("Por favor adjunta la foto del comprobante", "error");
+          return;
+        }
+
+        setSubiendo(true);
+        const fechaObj = new Date();
+        const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+        const diaStr = String(fechaObj.getDate()).padStart(2, '0');
+        const mesStr = meses[fechaObj.getMonth()];
+
+        let finalComprobanteUrl = vistaPreviaLocal; // Fallback a Base64 local
+
+        // Subir a Supabase Storage si está disponible
+        if (supabase && archivoComprobante) {
+          try {
+            const nombreArchivo = `${Date.now()}_${archivoComprobante.name}`;
+            const { data: storageData, error: storageErr } = await supabase.storage
+              .from('comprobantes')
+              .upload(nombreArchivo, archivoComprobante);
+
+            if (!storageErr && storageData) {
+              const { data: publicUrlData } = supabase.storage
+                .from('comprobantes')
+                .getPublicUrl(nombreArchivo);
+              finalComprobanteUrl = publicUrlData.publicUrl;
+            }
+          } catch (err) {
+            console.warn("No se pudo subir a Supabase Storage, usando codificación local.", err);
+          }
+        }
+
+        const nuevoPago = {
+          id: Date.now(),
+          dia: diaStr,
+          mes: mesStr,
+          monto: Number(nuevoMonto),
+          recibio: "Por Verificar",
+          estatus: "pendiente",
+          metodo: metodoPago,
+          comprobante_url: finalComprobanteUrl
+        };
+
+        if (supabase) {
+          try {
+            const { error } = await supabase.from('pagos').insert([nuevoPago]);
+            if (error) throw error;
+            mostrarNotif("Comprobante enviado a la nube. Esperando validación del dueño.", "exito");
+          } catch (err) {
+            console.error("Error guardando en Supabase:", err);
+            const actualizados = [nuevoPago, ...abonos];
+            guardarEnLocalStorage(actualizados);
+            mostrarNotif("Guardado localmente. Se actualizará al reconectar.", "info");
+          }
+        } else {
+          const actualizados = [nuevoPago, ...abonos];
+          guardarEnLocalStorage(actualizados);
+          mostrarNotif("Comprobante enviado exitosamente (Modo Local).", "exito");
+        }
+
+        setSubiendo(false);
+        setArchivoComprobante(null);
+        setVistaPreviaLocal(null);
+        setNuevoMonto("300");
+      };
+
+      // Acciones del Dueño: Aprobar / Rechazar
+      const handleAprobarPago = async (id) => {
+        if (supabase) {
+          try {
+            const { error } = await supabase
+              .from('pagos')
+              .update({ estatus: 'aprobado', recibio: 'Firma Digital' })
+              .eq('id', id);
+            if (error) throw error;
+            mostrarNotif("Pago APROBADO en tiempo real.", "exito");
+          } catch (err) {
+            const actualizados = abonos.map(item => item.id === id ? { ...item, estatus: 'aprobado', recibio: 'Firma Digital' } : item);
+            guardarEnLocalStorage(actualizados);
+            mostrarNotif("Pago APROBADO localmente.", "exito");
+          }
+        } else {
+          const actualizados = abonos.map(item => item.id === id ? { ...item, estatus: 'aprobado', recibio: 'Firma Digital' } : item);
+          guardarEnLocalStorage(actualizados);
+          mostrarNotif("Pago APROBADO localmente.", "exito");
+        }
+      };
+
+      const handleRechazarPago = async (id) => {
+        if (supabase) {
+          try {
+            const { error } = await supabase.from('pagos').delete().eq('id', id);
+            if (error) throw error;
+            mostrarNotif("Comprobante rechazado y removido.", "info");
+          } catch (err) {
+            const actualizados = abonos.filter(item => item.id !== id);
+            guardarEnLocalStorage(actualizados);
+            mostrarNotif("Comprobante rechazado.", "info");
+          }
+        } else {
+          const actualizados = abonos.filter(item => item.id !== id);
+          guardarEnLocalStorage(actualizados);
+          mostrarNotif("Comprobante rechazado.", "info");
+        }
+      };
+
+      const mostrarNotif = (msg, tipo) => {
+        setNotificación({ msg, tipo });
+        setTimeout(() => setNotificación(null), 4000);
+      };
+
+      return (
+        <div className="min-h-screen bg-slate-950 text-slate-100 pb-12">
+          
+          {/* Toast Notification */}
+          {notificación && (
+            <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl border backdrop-blur-md transition-all duration-300 ${
+              notificación.tipo === 'error' ? 'bg-rose-900/90 border-rose-500 text-rose-100' :
+              notificación.tipo === 'info' ? 'bg-amber-900/90 border-amber-500 text-amber-100' :
+              'bg-emerald-900/90 border-emerald-500 text-emerald-100'
+            }`}>
+              <span className="font-medium text-sm">{notificación.msg}</span>
+            </div>
+          )}
+
+          {/* NAVBAR / HEADER */}
+          <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
+            <div className="max-w-6xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-white p-1 rounded-full shadow-lg flex items-center justify-center shrink-0">
+                  <LogoDistribuidoraAndrea className="w-10 h-10" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-blue-400 bg-clip-text text-transparent">
+                    DISTRIBUIDORA ANDREA
+                  </h1>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-slate-400">Control de Créditos y Comprobantes</p>
+                    {supabase ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
+                        ● Supabase En Vivo
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full font-semibold">
+                        Modo Local
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Selector de Rol */}
+              <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 w-full sm:w-auto">
+                <button
+                  onClick={() => setRole('cliente')}
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                    role === 'cliente'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Vista Cliente
+                </button>
+                <button
+                  onClick={() => setRole('dueno')}
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                    role === 'dueno'
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Vista Dueño
+                  {pendientes.length > 0 && (
+                    <span className="bg-amber-500 text-slate-950 text-xs px-2 py-0.5 rounded-full font-bold animate-pulse">
+                      {pendientes.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* MAIN CONTAINER */}
+          <main className="max-w-6xl mx-auto px-4 mt-6">
+
+            {/* VISTA CLIENTE */}
+            {role === 'cliente' && (
+              <div className="space-y-6">
+                
+                {/* Banner de Bienvenida y Progreso */}
+                <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-blue-950 rounded-2xl p-6 border border-slate-800 shadow-xl relative overflow-hidden">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+                    <div className="flex items-start gap-4">
+                      <div className="bg-white p-2 rounded-2xl shadow-lg shrink-0 hidden sm:block">
+                        <LogoDistribuidoraAndrea className="w-14 h-14" />
+                      </div>
+                      <div>
+                        <span className="inline-block px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold mb-2">
+                          Estado de Cuenta Actualizado
+                        </span>
+                        <h2 className="text-2xl font-bold text-white">{cliente.nombre}</h2>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400 mt-1">
+                          <span>📍 {cliente.domicilio}, {cliente.poblacion}</span>
+                          <span>📞 {cliente.telefono}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-xl flex items-center gap-4">
+                      <div className="relative w-16 h-16 flex items-center justify-center">
+                        <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                          <path className="text-slate-800" strokeWidth="3.5" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                          <path className="text-blue-500 stroke-current" strokeDasharray={`${porcentajePagado}, 100`} strokeWidth="3.5" strokeLinecap="round" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        </svg>
+                        <span className="absolute text-sm font-extrabold text-blue-400">{porcentajePagado}%</span>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-400">Progreso de Pago</p>
+                        <p className="text-sm font-semibold text-white">${totalAbonado.toLocaleString('es-MX')} abonados</p>
+                        <p className="text-xs text-slate-400">de ${cliente.montoTotal.toLocaleString('es-MX')}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tarjetas Informativas */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-lg">
+                    <p className="text-xs text-slate-400 font-medium">Artículo Adquirido</p>
+                    <h3 className="text-lg font-bold text-white mt-1">{cliente.articulo}</h3>
+                    <p className="text-xs text-blue-400 font-medium mt-1">Modalidad: {cliente.formaPago}</p>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-lg">
+                    <p className="text-xs text-slate-400 font-medium">Costo Total del Equipo</p>
+                    <h3 className="text-xl font-extrabold text-emerald-400 mt-1">${cliente.montoTotal.toLocaleString('es-MX')}</h3>
+                    <p className="text-xs text-slate-500 mt-1">Precio acordado en nota</p>
+                  </div>
+
+                  <div className="bg-gradient-to-br from-blue-950/40 to-indigo-950/40 border border-blue-500/30 p-5 rounded-2xl shadow-lg">
+                    <p className="text-xs text-blue-300 font-bold uppercase tracking-wider">SALDO FALTANTE</p>
+                    <h3 className="text-2xl font-black text-rose-400 mt-1">${saldoFaltante.toLocaleString('es-MX')}</h3>
+                    <p className="text-xs text-slate-300 mt-1">Pendiente por liquidar</p>
+                  </div>
+                </div>
+
+                {/* Formulario de Subida de Comprobante */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                  <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+                    💳 Registrar Nuevo Abono con Comprobante
+                  </h3>
+                  <p className="text-xs text-slate-400 mb-6">Sube la foto del ticket o captura de pantalla de tu transferencia o pago con tarjeta.</p>
+
+                  <form onSubmit={handleEnviarComprobante} className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-300 mb-1">Monto Abonado ($ MXN)</label>
+                        <input 
+                          type="number"
+                          value={nuevoMonto}
+                          onChange={(e) => setNuevoMonto(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm font-semibold"
+                          placeholder="300"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-slate-300 mb-1">Método de Pago</label>
+                        <select
+                          value={metodoPago}
+                          onChange={(e) => setMetodoPago(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm"
+                        >
+                          <option value="Tarjeta de Débito/Crédito">Tarjeta de Débito / Crédito</option>
+                          <option value="Transferencia SPEI">Transferencia Bancaria SPEI</option>
+                          <option value="Depósito OXXO/Ventanilla">Depósito OXXO / Ventanilla</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Selector de Foto */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1">Foto o Captura del Comprobante</label>
+                      <div className="border-2 border-dashed border-slate-800 hover:border-blue-500/50 rounded-xl p-4 transition-all text-center bg-slate-950/50">
+                        <input 
+                          type="file" 
+                          accept="image/*"
+                          onChange={handleSeleccionarArchivo}
+                          className="hidden" 
+                          id="comprobante-input"
+                        />
+                        <label htmlFor="comprobante-input" className="cursor-pointer flex flex-col items-center justify-center gap-2">
+                          {vistaPreviaLocal ? (
+                            <div className="relative">
+                              <img 
+                                src={vistaPreviaLocal} 
+                                alt="Vista previa" 
+                                className="max-h-40 rounded-lg object-contain border border-slate-700 shadow-md"
+                              />
+                              <span className="text-xs text-blue-400 mt-2 block font-medium">Clic para cambiar imagen</span>
+                            </div>
+                          ) : (
+                            <>
+                              <span className="text-2xl">📸</span>
+                              <span className="text-sm font-medium text-slate-200">Haz clic aquí para adjuntar tu comprobante</span>
+                              <span className="text-xs text-slate-500">Formatos permitidos: JPG, PNG, WEBP</span>
+                            </>
+                          )}
+                        </label>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={subiendo}
+                      className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {subiendo ? "Subiendo Comprobante..." : "Enviar Comprobante al Dueño"}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Tabla de Abonos del Cliente */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                  <h3 className="text-lg font-bold text-white mb-4">📜 Historial de Pagos y Abonos</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-slate-300">
+                      <thead className="bg-slate-950 text-slate-400 uppercase font-semibold border-b border-slate-800">
+                        <tr>
+                          <th className="py-3 px-4">Fecha</th>
+                          <th className="py-3 px-4">Método / Detalle</th>
+                          <th className="py-3 px-4 text-right">Abono</th>
+                          <th className="py-3 px-4 text-center">Estado</th>
+                          <th className="py-3 px-4 text-center">Comprobante</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {abonos.map((item) => (
+                          <tr key={item.id} className="hover:bg-slate-800/40">
+                            <td className="py-3 px-4 font-medium text-white">{item.dia} de {item.mes}</td>
+                            <td className="py-3 px-4">{item.metodo || 'Efectivo / Mostrador'}</td>
+                            <td className="py-3 px-4 text-right font-bold text-emerald-400">${Number(item.monto).toLocaleString('es-MX')}</td>
+                            <td className="py-3 px-4 text-center">
+                              {item.estatus === 'aprobado' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  ✓ Aprobado
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                  ⏳ En Revisión
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              {item.comprobante_url ? (
+                                <button
+                                  onClick={() => setModalImagen(item.comprobante_url)}
+                                  className="text-blue-400 hover:text-blue-300 font-semibold underline"
+                                >
+                                  Ver Foto
+                                </button>
+                              ) : (
+                                <span className="text-slate-500">Recibo Físico</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* VISTA DUEÑO / ADMINISTRADOR */}
+            {role === 'dueno' && (
+              <div className="space-y-6">
+                
+                {/* FICHA COMPLETA DEL CLIENTE */}
+                <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 rounded-2xl p-6 border border-slate-800 shadow-xl">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                    <div className="flex items-start gap-4">
+                      <div className="bg-white p-2 rounded-2xl shadow-lg shrink-0 hidden sm:block">
+                        <LogoDistribuidoraAndrea className="w-14 h-14" />
+                      </div>
+                      <div>
+                        <span className="inline-block px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold mb-2">
+                          👤 Expediente Activo de Cliente
+                        </span>
+                        <h2 className="text-2xl font-bold text-white">{cliente.nombre}</h2>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs text-slate-300 mt-3">
+                          <span>📍 <strong>Domicilio:</strong> {cliente.domicilio}, {cliente.poblacion}</span>
+                          <span>📞 <strong>Teléfono:</strong> {cliente.telefono}</span>
+                          <span>📺 <strong>Artículo:</strong> {cliente.articulo} ({cliente.formaPago})</span>
+                          <span>📅 <strong>Fecha Venta:</strong> {cliente.fechaVenta}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-950/80 border border-slate-800 p-4 rounded-xl flex flex-wrap sm:flex-nowrap items-center gap-4 justify-between lg:justify-end">
+                      <div>
+                        <p className="text-xs text-slate-400">Total Venta</p>
+                        <p className="text-base font-bold text-white">${cliente.montoTotal.toLocaleString('es-MX')}</p>
+                      </div>
+                      <div className="h-8 w-px bg-slate-800 hidden sm:block"></div>
+                      <div>
+                        <p className="text-xs text-slate-400">Total Abonado</p>
+                        <p className="text-base font-bold text-emerald-400">${totalAbonado.toLocaleString('es-MX')}</p>
+                      </div>
+                      <div className="h-8 w-px bg-slate-800 hidden sm:block"></div>
+                      <div>
+                        <p className="text-xs text-slate-400">Saldo Restante</p>
+                        <p className="text-base font-bold text-rose-400">${saldoFaltante.toLocaleString('es-MX')}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Métricas Generales */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-lg">
+                    <p className="text-xs text-slate-400 font-medium">Total Cobrado Verificado</p>
+                    <h3 className="text-2xl font-black text-emerald-400 mt-1">${totalAbonado.toLocaleString('es-MX')}</h3>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-lg">
+                    <p className="text-xs text-slate-400 font-medium">Saldo Restante por Cobrar</p>
+                    <h3 className="text-2xl font-black text-rose-400 mt-1">${saldoFaltante.toLocaleString('es-MX')}</h3>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-lg">
+                    <p className="text-xs text-slate-400 font-medium">Comprobantes por Validar</p>
+                    <h3 className="text-2xl font-black text-amber-400 mt-1">{pendientes.length}</h3>
+                  </div>
+                </div>
+
+                {/* Bandeja de Verificación de Comprobantes */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                  <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    ⏳ Comprobantes de Pago Pendientes por Validar
+                  </h3>
+
+                  {pendientes.length === 0 ? (
+                    <div className="text-center py-8 border border-dashed border-slate-800 rounded-xl bg-slate-950/40">
+                      <p className="text-slate-300 font-medium">No hay comprobantes pendientes de pago.</p>
+                      <p className="text-xs text-slate-500">Todos los abonos enviados han sido procesados.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {pendientes.map((item) => (
+                        <div key={item.id} className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col justify-between gap-4">
+                          <div className="flex gap-4">
+                            {item.comprobante_url && (
+                              <img 
+                                src={item.comprobante_url} 
+                                alt="Comprobante" 
+                                className="w-24 h-24 object-cover rounded-lg border border-slate-800 cursor-pointer shrink-0"
+                                onClick={() => setModalImagen(item.comprobante_url)}
+                              />
+                            )}
+                            <div>
+                              <span className="text-xs text-slate-400 font-medium">Cliente: {cliente.nombre}</span>
+                              <h4 className="text-xl font-bold text-emerald-400">${Number(item.monto).toLocaleString('es-MX')}</h4>
+                              <p className="text-xs text-slate-300 mt-1">Fecha: {item.dia} de {item.mes}</p>
+                              <p className="text-xs text-blue-400 font-medium">Método: {item.metodo}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 border-t border-slate-800 pt-3">
+                            <button
+                              onClick={() => handleAprobarPago(item.id)}
+                              className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-lg text-xs shadow-md"
+                            >
+                              ✓ Aprobar y Descontar Saldo
+                            </button>
+                            <button
+                              onClick={() => handleRechazarPago(item.id)}
+                              className="px-3 bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800 font-bold py-2 rounded-lg text-xs"
+                            >
+                              ✕ Rechazar
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Tabla de Control de Abonos Registrados */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                  <h3 className="text-lg font-bold text-white mb-4">📋 Historial Completo de Abonos</h3>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-slate-300">
+                      <thead className="bg-slate-950 text-slate-400 uppercase font-semibold border-b border-slate-800">
+                        <tr>
+                          <th className="py-3 px-4">Día</th>
+                          <th className="py-3 px-4">Mes</th>
+                          <th className="py-3 px-4 text-right">Abono</th>
+                          <th className="py-3 px-4">Firma / Recibió</th>
+                          <th className="py-3 px-4 text-center">Estado</th>
+                          <th className="py-3 px-4 text-center">Comprobante</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {abonos.map((item) => (
+                          <tr key={item.id} className="hover:bg-slate-800/40">
+                            <td className="py-3 px-4 font-bold text-white">{item.dia}</td>
+                            <td className="py-3 px-4">{item.mes}</td>
+                            <td className="py-3 px-4 text-right font-extrabold text-emerald-400">${Number(item.monto).toLocaleString('es-MX')}</td>
+                            <td className="py-3 px-4 text-slate-400">{item.recibio}</td>
+                            <td className="py-3 px-4 text-center">
+                              {item.estatus === 'aprobado' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  ✓ Aprobado
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                  ⏳ Pendiente
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              {item.comprobante_url ? (
+                                <button
+                                  onClick={() => setModalImagen(item.comprobante_url)}
+                                  className="text-blue-400 hover:text-blue-300 font-semibold underline"
+                                >
+                                  Ver Imagen
+                                </button>
+                              ) : (
+                                <span className="text-slate-500">Recibo Físico</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+          </main>
+
+          {/* MODAL PARA VER COMPROBANTE EN TAMAÑO COMPLETO */}
+          {modalImagen && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="relative max-w-2xl w-full bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-2xl">
+                <button 
+                  onClick={() => setModalImagen(null)}
+                  className="absolute top-3 right-3 bg-slate-800 text-slate-300 hover:text-white px-3 py-1 rounded-full text-xs font-bold border border-slate-700"
+                >
+                  ✕ Cerrar
+                </button>
+                <h4 className="text-sm font-bold text-white mb-3">Foto del Comprobante de Pago</h4>
+                <div className="flex justify-center">
+                  <img src={modalImagen} alt="Comprobante ampliado" className="max-h-[75vh] object-contain rounded-xl border border-slate-800" />
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      );
+    }
+
+    // Renderizar la aplicación React
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
